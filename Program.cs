@@ -4,14 +4,15 @@ using System.Text;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Encodings.Web;
 using System.Collections.Generic;
 
 using MimeKit;
-using HtmlAgilityPack;
 using MailKit.Net.Smtp;
+using System.Text.Json.Serialization;
+
+
 
 namespace Junkyard
 {
@@ -20,90 +21,89 @@ namespace Junkyard
         static async Task Main(string[] args)
         {
             HttpClient client = new HttpClient();
-            var stringTask = client.GetStringAsync("https://www.picknpull.com/check_inventory.aspx?Zip=76120&Make=182&Model=3608&Distance=50");
-            
-            HtmlDocument pageDocument = new HtmlDocument();
-            var pageContents = "";
-            // try
-            // {
-            //     // Open the text file using a stream reader.
-            //     using (var sr = new StreamReader("PickNPull2.txt"))
-            //     {
-            //         // Read the stream as a string, and write the string to the console.
-            //         pageContents += await sr.ReadToEndAsync();
-            //     }
-            // }
-            // catch (IOException e)
-            // {
-            //     Console.WriteLine("The file could not be read:");
-            //     Console.WriteLine(e.Message);
-            // }
-            
-            pageContents = await stringTask;
 
-            pageDocument.LoadHtml(pageContents);
-
-            var body = pageDocument.DocumentNode.ChildNodes.Elements().Where(rec => rec.Name.Contains("body")).FirstOrDefault();
-            body.SelectNodes("//div[@id='ctl00_ctl00_MasterHolder_MainContent_resultsDiv']");
-            var cars = new List<CarInfo>();
-            var temp = new List<CarInfo>();
-            int i = 1;
-            try 
-            {
-                while (temp != null)
-                {
-                    var js = body.CreateNavigator().Evaluate($"substring((//div[@id='ctl00_ctl00_MasterHolder_MainContent_resultsDiv']//span//script)[{i}], 0)").ToString();
-                    if (js == null || js == "")
-                    {
-                        break;
-                    }
-                    var openArray = js.IndexOf("[");
-                    var closeArray = js.IndexOf("]");
-                    var array = js.Substring(openArray, closeArray - (openArray - 1));
-                    temp = Deserialize(array);
-                    if (temp != null)
-                    {
-                        cars.AddRange(temp);
-                    }
-                    i++;
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.StackTrace);
-            }
-                        
-            cars.Sort((car1, car2) => int.Parse(car2.Year) - int.Parse(car1.Year));
-            string docPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-
-            List<string> vins = new List<string>();
-            try 
-            {
-                using (StreamReader inputFile = new StreamReader(Path.Combine(docPath, "SEEN_VIN.txt")))
-                {
-                    var line = "";
-                    while (line != null)
-                    {
-                        line = inputFile.ReadLine();
-                        vins.Add(line);
-                    }
-                }
-
-            }
-            catch
-            {
-                Console.WriteLine("File doesnt exist I guess.");
-            }
             bool foundNewCar = false;
-            // Write the string array to a new file named "WriteLines.txt".
-            using (StreamWriter outputFile = new StreamWriter(Path.Combine(docPath, "SEEN_VIN.txt"), true))
+            List<string> vins = new List<string>();
+            List<string> urls = new List<string>();
+            string docPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            using (StreamReader inputFile = new StreamReader(Path.Combine(docPath, "URLS.txt")))
             {
-                foreach (var car in cars)
+                var line = "";
+                while (line != null)
                 {
-                    if (!vins.Contains(car.VIN) || car.isFiveDaysOld() || car.isTenDaysOld())
+                    line = inputFile.ReadLine();
+                    if (String.IsNullOrEmpty(line) || String.IsNullOrWhiteSpace(line))
                     {
-                        outputFile.WriteLine(car.VIN);
-                        foundNewCar = true;
+                        continue;
+                    }
+                    urls.Add(line);
+                }
+            }
+
+
+            var cars = new List<CarInfo>();
+            foreach (var arg in urls)
+            {
+                Console.WriteLine("Getting cars at: " + arg);
+                var stringTask = client.GetStringAsync(arg);
+
+                var pageContents = "";
+                // try
+                // {
+                //     // Open the text file using a stream reader.
+                //     using (var sr = new StreamReader("PickNPull1.txt"))
+                //     {
+                //         // Read the stream as a string, and write the string to the console.
+                //         pageContents += await sr.ReadToEndAsync();
+                //     }
+                // }
+                // catch (IOException e)
+                // {
+                //     Console.WriteLine("The file could not be read:");
+                //     Console.WriteLine(e.Message);
+                // }
+                
+                pageContents = await stringTask;
+                var response = Deserialize(pageContents);
+
+                
+                response.ForEach(rec =>
+                {
+                    rec.vehicles.ForEach(car => {
+                        car.location = rec.location;
+                        cars.Add(car);
+                    });
+                });
+                
+                cars.Sort((car1, car2) => car2.year - car1.year);
+
+                try 
+                {
+                    using (StreamReader inputFile = new StreamReader(Path.Combine(docPath, "SEEN_VIN.txt")))
+                    {
+                        var line = "";
+                        while (line != null)
+                        {
+                            line = inputFile.ReadLine();
+                            vins.Add(line);
+                        }
+                    }
+
+                }
+                catch
+                {
+                    Console.WriteLine("File doesnt exist I guess.");
+                }
+                // Write the string array to a new file named "WriteLines.txt".
+                using (StreamWriter outputFile = new StreamWriter(Path.Combine(docPath, "SEEN_VIN.txt"), true))
+                {
+                    foreach (var car in cars)
+                    {
+                        if (!vins.Contains(car.vin) || car.isFiveDaysOld() || car.isTenDaysOld())
+                        {
+                            outputFile.WriteLine(car.vin);
+                            foundNewCar = true;
+                        }
                     }
                 }
             }
@@ -126,16 +126,16 @@ namespace Junkyard
                             }
                             foreach (var car in cars.Where(car => car.isFiveDaysOld()).ToList())
                             {
-                                if (!vins.Contains(car.VIN) || car.isFiveDaysOld())
+                                if (!vins.Contains(car.vin) || car.isFiveDaysOld())
                                 {
                                     sb.Append("<tr>");
-                                    sb.Append($"<td style='border: solid black 2px;'>{car.Make} - {car.Model} ({car.Year})</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>{car.make} - {car.model} ({car.year})</td>");
                                     // sb.Append($"<br/>");
-                                    sb.Append($"<td style='border: solid black 2px;'>{car.LocationName}</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>{car.locationName}</td>");
                                     // sb.Append($"<br/>");
-                                    sb.Append($"<td style='border: solid black 2px;'><img src='https://cdn.row52.com/images/{car.Size1}.JPG'></td>");
-                                    sb.Append($"<td style='border: solid black 2px;'>{car.VIN}</td>");
-                                    sb.Append($"<td style='border: solid black 2px;'>Added {DateTime.Parse(car.DateAdded).ToString("MM/dd/yyyy")}</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'><img src='https://cdn.row52.com/images/{car.size1}.JPG'></td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>{car.vin}</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>Added {DateTime.Parse(car.dateAdded).ToString("MM/dd/yyyy")}</td>");
                                     // sb.Append($"<br/>");
                                     sb.Append("</tr>");
                                 }
@@ -152,16 +152,16 @@ namespace Junkyard
                             }
                             foreach (var car in cars.Where(car => !car.isFiveDaysOld()))
                             {
-                                if (!vins.Contains(car.VIN) || car.isTenDaysOld())
+                                if (!vins.Contains(car.vin) || car.isTenDaysOld())
                                 {
                                     sb.Append("<tr>");
-                                    sb.Append($"<td style='border: solid black 2px;'>{car.Make} - {car.Model} ({car.Year})</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>{car.make} - {car.model} ({car.year})</td>");
                                     // sb.Append($"<br/>");
-                                    sb.Append($"<td style='border: solid black 2px;'>{car.LocationName}</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>{car.locationName}</td>");
                                     // sb.Append($"<br/>");
-                                    sb.Append($"<td style='border: solid black 2px;'><img src='https://cdn.row52.com/images/{car.Size1}.JPG'></td>");
-                                    sb.Append($"<td style='border: solid black 2px;'>{car.VIN}</td>");
-                                    sb.Append($"<td style='border: solid black 2px;'>Added {DateTime.Parse(car.DateAdded).ToString("MM/dd/yyyy")}</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'><img src='https://cdn.row52.com/images/{car.size1}.JPG'></td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>{car.vin}</td>");
+                                    sb.Append($"<td style='border: solid black 2px;'>Added {DateTime.Parse(car.dateAdded).ToString("MM/dd/yyyy")}</td>");
                                     // sb.Append($"<br/>");
                                     sb.Append("</tr>");
                                 }
@@ -196,53 +196,74 @@ namespace Junkyard
                     smtpClient.Disconnect(true);
                 }
             }
-            // smtpClient.Send("***REMOVED***", "***REMOVED***", "Isam's Junkyard 3/20/2021", sb.ToString());
+            else
+            {
+                Console.WriteLine("No Cars Found! " + DateTimeOffset.Now.ToString());
+            }
         }
-        public static List<CarInfo> Deserialize(string json)
+        public static List<PickNPullResponse> Deserialize(string json)
         {
             var options = new JsonSerializerOptions
             {
                 AllowTrailingCommas = true,
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                PropertyNameCaseInsensitive = true,
             };
 
-            return JsonSerializer.Deserialize<List<CarInfo>>(json, options);
+            return JsonSerializer.Deserialize<List<PickNPullResponse>>(json, options);
         }
+    }
+
+    [Serializable]
+    class PickNPullResponse 
+    {
+        public Location location { get; set; }
+        public List<CarInfo> vehicles { get; set; }
+    }
+    [Serializable]
+    class Location 
+    {
+        public string name { get; set; }
     }
 
     [Serializable]
     class CarInfo 
     {
-        public long Id {get; set;}
-        public string VIN {get; set;}
-        public string LocationName {get; set;}
-        public string LocationId {get; set;}
-        public string Row {get; set;}
-        public string DateAdded {get; set;}
-        public string Year { get; set;}
-        public string Make {get; set;}
-        public string Model {get; set;}
-        public string ThumbNail {get; set;}
-        public string LocationCode {get; set;}
-        public string City {get; set;}
-        public string State {get; set;}
-        public string Zip {get; set;}
-        public string Engine {get; set;}
-        public string Transmission {get; set;}
-        public string Trim {get; set;}
-        public string Color {get; set;}
-        public string Size1 {get; set;}
-        public string BarCodeNumber {get; set;}
-        public string ImageDate {get; set;}
+        public long id {get; set;}
+        public string vin {get; set;}
+        public string locationName {get; set;}
+        public int locationId {get; set;}
+        public string row {get; set;}
+        public string dateAdded {get; set;}
+        public int year { get; set;}
+        public string make {get; set;}
+        public string model {get; set;}
+        public string thumbNail {get; set;}
+        // public string LocationCode {get; set;}
+        // public string City {get; set;}
+        // public string State {get; set;}
+        // public string Zip {get; set;}
+        public string engine {get; set;}
+        public string transmission {get; set;}
+        public string trim {get; set;}
+        public string color {get; set;}
+        public string size1 {get; set;}
+        public string size2 {get; set;}
+        public string size3 {get; set;}
+        public string size4 {get; set;}
+        public string barCodeNumber {get; set;}
+        public string imageDate {get; set;}
+
+        [JsonIgnore]
+        public Location location{ get; set; }
 
         public bool isFiveDaysOld()
         {
-            return DateTime.Parse(this.DateAdded).AddDays(5) > DateTime.Now;
+            return DateTime.Parse(this.dateAdded).AddDays(5) > DateTime.Now;
         }
         public bool isTenDaysOld()
         {
-            return DateTime.Parse(this.DateAdded).AddDays(10) > DateTime.Now;
+            return DateTime.Parse(this.dateAdded).AddDays(10) > DateTime.Now;
         }
     }
 }
