@@ -3,14 +3,11 @@ using System.IO;
 using System.Text;
 using System.Linq;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading.Tasks;
-using System.Text.Encodings.Web;
 using System.Collections.Generic;
 
 using MimeKit;
 using MailKit.Net.Smtp;
-using System.Text.Json.Serialization;
 
 using Microsoft.Extensions.Configuration;
 
@@ -27,111 +24,79 @@ class Program
             .Build();
         outgoingMailBox = config.GetSection("OutgoingMailBox").Get<OutgoingMailBox>();
 
+        string docPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) + "/IsamsJunkyard/";
+
+        //? Make requests to PickNPull.
         HttpClient client = new HttpClient();
-
-        bool foundNewCar = false;
-        List<string> vins = new List<string>();
-        List<string> urls = new List<string>();
-        string docPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        docPath += "/IsamsJunkyard/";
-        using (StreamReader inputFile = new StreamReader(Path.Combine(docPath, "URLS.txt")))
+        List<PickNPullResponse> responses = new List<PickNPullResponse>();
+        List<string> urls = await GetRequestUrls(Path.Combine(docPath, "URLS.txt"));
+        foreach (var url in urls)
         {
-            var line = "";
-            while (line != null)
-            {
-                line = inputFile.ReadLine();
-                if (String.IsNullOrEmpty(line) || String.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-                urls.Add(line);
-            }
+            Console.WriteLine("Getting cars at: " + url);
+            var response = PickNPullResponse.Deserialize(await client.GetStringAsync(url));
+            responses.AddRange(response);
         }
 
-
-        var cars = new List<CarInfo>();
-        foreach (var arg in urls)
+        //? Build list of car details.
+        List<CarInfo> cars = new List<CarInfo>();
+        responses.ForEach(response =>
         {
-            Console.WriteLine("Getting cars at: " + arg);
-            var stringTask = client.GetStringAsync(arg);
-
-            var pageContents = "";
-
-            pageContents = await stringTask;
-            var response = Deserialize(pageContents);
-
-
-            response.ForEach(rec =>
+            response.vehicles.ForEach(car =>
             {
-                rec.vehicles.ForEach(car =>
-                {
-                    car.location = rec.location;
-                    cars.Add(car);
-                });
+                car.location = response.location;
+                cars.Add(car);
             });
+        });
+        cars.Sort((car1, car2) => car2.year - car1.year);
 
-            cars.Sort((car1, car2) => car2.year - car1.year);
-
-            try
+        //? Check to see if we found a new car
+        bool foundNewCar = false;
+        List<string> vins = await GetSeenVins(Path.Combine(docPath, "SEEN_VIN.txt"));
+        using (StreamWriter outputFile = new StreamWriter(Path.Combine(docPath, "SEEN_VIN.txt"), true))
+        {
+            cars.ForEach(car =>
             {
-                using (StreamReader inputFile = new StreamReader(Path.Combine(docPath, "SEEN_VIN.txt")))
+                if (!vins.Contains(car.vin) || car.isFiveDaysOld() || car.isTenDaysOld())
                 {
-                    var line = "";
-                    while (line != null)
-                    {
-                        line = inputFile.ReadLine();
-                        vins.Add(line);
-                    }
+                    outputFile.WriteLine(car.vin);
+                    foundNewCar = true;
                 }
-
-            }
-            catch
-            {
-                Console.WriteLine("File doesnt exist I guess.");
-            }
-            // Write the string array to a new file named "WriteLines.txt".
-            using (StreamWriter outputFile = new StreamWriter(Path.Combine(docPath, "SEEN_VIN.txt"), true))
-            {
-                foreach (var car in cars)
-                {
-                    if (!vins.Contains(car.vin) || car.isFiveDaysOld() || car.isTenDaysOld())
-                    {
-                        outputFile.WriteLine(car.vin);
-                        foundNewCar = true;
-                    }
-                }
-            }
+            });
         }
 
+        //? No new car found? We're done! :)
+        if (!foundNewCar)
+        {
+            Console.WriteLine("No Cars Found! " + DateTimeOffset.Now.ToString());
+            return;
+        }
 
-
+        //? Build e-mail
         var mailMessage = new MimeMessage();
         mailMessage.From.Add(new MailboxAddress(outgoingMailBox.Name, outgoingMailBox.Email));
-        mailMessage.To.Add(new MailboxAddress("Isam Hashmi", "***REMOVED***"));
-        // mailMessage.To.Add(new MailboxAddress("Isam Hashmi", "***REMOVED***@txt.att.net" ));
+        //? Add subscribers to email
+        List<Subscriber> subscriberList = await Subscriber.ReadSubscribers(Path.Combine(docPath, "SUBSCRIBERS.txt"));
+        foreach (var subscriber in subscriberList)
+        {
+            mailMessage.To.Add(new MailboxAddress(subscriber.Name, subscriber.Email));
+        }
 
-        //mailMessage.To.Add(new MailboxAddress("***REMOVED***", "***REMOVED***" ));
-        // mailMessage.To.Add(new MailboxAddress("***REMOVED***", "***REMOVED***@txt.att.net" ));
-
+        //? Set subject and body
         mailMessage.Subject = "Isam's Junkard " + DateTime.Now.ToString("MM/dd/yyyy");
         mailMessage.Body = new TextPart("html")
         {
             Text = buildEmail(cars, vins)
         };
 
-        if (foundNewCar)
+        //? Send email
+        using (var smtpClient = new SmtpClient())
         {
-            using (var smtpClient = new SmtpClient())
-            {
-                smtpClient.Connect("smtp.gmail.com", 465, true);
-                smtpClient.Authenticate(outgoingMailBox.Email, outgoingMailBox.AccessKey);
-                smtpClient.Send(mailMessage);
-                smtpClient.Disconnect(true);
-            }
-        }
-        else
-        {
-            Console.WriteLine("No Cars Found! " + DateTimeOffset.Now.ToString());
+            // mailMessage.To.Add(new MailboxAddress("Isam Hashmi", "***REMOVED***@txt.att.net" ));
+            // mailMessage.To.Add(new MailboxAddress("***REMOVED*** Hashmi", "***REMOVED***@txt.att.net" ));
+            smtpClient.Connect(outgoingMailBox.Host, outgoingMailBox.Port, outgoingMailBox.UseSSL);
+            smtpClient.Authenticate(outgoingMailBox.Email, outgoingMailBox.AccessKey);
+            smtpClient.Send(mailMessage);
+            smtpClient.Disconnect(true);
         }
     }
     public static string buildEmail(List<CarInfo> cars, List<string> vins)
@@ -158,13 +123,10 @@ class Program
             {
                 sb.Append("<tr>");
                 sb.Append($"<td style='border: solid black 2px;'>{car.make} - {car.model} ({car.year})</td>");
-                // sb.Append($"<br/>");
                 sb.Append($"<td style='border: solid black 2px;'>{car.locationName}</td>");
-                // sb.Append($"<br/>");
                 sb.Append($"<td style='border: solid black 2px;'><img src='https://cdn.row52.com/images/{car.size1}.JPG'></td>");
                 sb.Append($"<td style='border: solid black 2px;'>{car.vin}</td>");
                 sb.Append($"<td style='border: solid black 2px;'>Added {DateTime.Parse(car.dateAdded).ToString("MM/dd/yyyy")}</td>");
-                // sb.Append($"<br/>");
                 sb.Append("</tr>");
             }
         }
@@ -184,13 +146,10 @@ class Program
             {
                 sb.Append("<tr>");
                 sb.Append($"<td style='border: solid black 2px;'>{car.make} - {car.model} ({car.year})</td>");
-                // sb.Append($"<br/>");
                 sb.Append($"<td style='border: solid black 2px;'>{car.locationName}</td>");
-                // sb.Append($"<br/>");
                 sb.Append($"<td style='border: solid black 2px;'><img src='https://cdn.row52.com/images/{car.size1}.JPG'></td>");
                 sb.Append($"<td style='border: solid black 2px;'>{car.vin}</td>");
                 sb.Append($"<td style='border: solid black 2px;'>Added {DateTime.Parse(car.dateAdded).ToString("MM/dd/yyyy")}</td>");
-                // sb.Append($"<br/>");
                 sb.Append("</tr>");
             }
         }
@@ -201,15 +160,41 @@ class Program
         sb.Append("</html>");
         return sb.ToString();
     }
-    public static List<PickNPullResponse> Deserialize(string json)
-    {
-        var options = new JsonSerializerOptions
-        {
-            AllowTrailingCommas = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            PropertyNameCaseInsensitive = true,
-        };
 
-        return JsonSerializer.Deserialize<List<PickNPullResponse>>(json, options);
+    public static async Task<List<string>> GetRequestUrls(string urlsFilePath)
+    {
+        return await GetLinesArrayFromFile(urlsFilePath);
+    }
+    public static async Task<List<string>> GetSeenVins(string vinFilePath)
+    {
+        return await GetLinesArrayFromFile(vinFilePath);
+    }
+    public static async Task<List<string>> GetLinesArrayFromFile(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                Console.WriteLine($"{filePath} does not exist. Creating it for you. Please fill it out if necessary.");
+                var file = File.Create(filePath);
+                file.Close();
+                return new List<string>();
+            }
+            using (StreamReader file = new StreamReader(filePath))
+            {
+                return (await file.ReadToEndAsync())
+                    .Split("\n",
+                        options: StringSplitOptions.RemoveEmptyEntries |
+                                 StringSplitOptions.TrimEntries
+                    ).ToList();
+                ;
+            }
+        }
+        catch
+        {
+            Console.WriteLine($"{filePath} does not exist or you do not have permission.");
+            return null;
+        }
+
     }
 }

@@ -14,11 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="HtmlAgilityPack" Version="1.11.31" />
+    <!-- ? For sending emails -->
     <PackageReference Include="MailKit" Version="2.11.1" />
+    <!-- ? For serializing/deserialing JSON -->
     <PackageReference Include="System.Text.Json" Version="5.0.1" />
+    <!-- ? For access to the user secrets functionality -->
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="5.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="6.0.0" />
+    <!-- ? For access to the Get extension casting function on configurations -->
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="6.0.0" />
   </ItemGroup>
 
