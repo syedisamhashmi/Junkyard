@@ -105,6 +105,20 @@ How to get those URLS?
 7.) Done!
 
 
+---
+Automating
+---
+
+- Linux
+
+You can run `crontab -e` to edit your cron file and add something like this at the end:
+
+`0 7 * * * dotnet exec {{PATH_TO_PROJECT}}/Junkyard.dll`
+
+- Windows
+
+Windows has a scheduling assistant that can be used, pretty intituitive from some google searches.
+
 <br>
 <br>
 <br>
