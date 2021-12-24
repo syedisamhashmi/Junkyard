@@ -1,15 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-
-using MimeKit;
 using MailKit.Net.Smtp;
-
 using Microsoft.Extensions.Configuration;
+using MimeKit;
 
 namespace Junkyard;
 class Program
@@ -91,8 +89,6 @@ class Program
         //? Send email
         using (var smtpClient = new SmtpClient())
         {
-            // mailMessage.To.Add(new MailboxAddress("Isam Hashmi", "***REMOVED***@txt.att.net" ));
-            // mailMessage.To.Add(new MailboxAddress("***REMOVED*** Hashmi", "***REMOVED***@txt.att.net" ));
             smtpClient.Connect(outgoingMailBox.Host, outgoingMailBox.Port, outgoingMailBox.UseSSL);
             smtpClient.Authenticate(outgoingMailBox.Email, outgoingMailBox.AccessKey);
             smtpClient.Send(mailMessage);
