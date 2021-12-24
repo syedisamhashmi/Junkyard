@@ -12,14 +12,21 @@ using MimeKit;
 using MailKit.Net.Smtp;
 using System.Text.Json.Serialization;
 
-
+using Microsoft.Extensions.Configuration;
 
 namespace Junkyard;
-
 class Program
 {
+    private static OutgoingMailBox outgoingMailBox;
     static async Task Main(string[] args)
     {
+        var config = new ConfigurationBuilder()
+            .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+            .AddJsonFile("appsettings.json")
+            .AddUserSecrets<Program>()
+            .Build();
+        outgoingMailBox = config.GetSection("OutgoingMailBox").Get<OutgoingMailBox>();
+
         HttpClient client = new HttpClient();
 
         bool foundNewCar = false;
@@ -99,7 +106,7 @@ class Program
 
 
         var mailMessage = new MimeMessage();
-        mailMessage.From.Add(new MailboxAddress("***REMOVED***", "***REMOVED***"));
+        mailMessage.From.Add(new MailboxAddress(outgoingMailBox.Name, outgoingMailBox.Email));
         mailMessage.To.Add(new MailboxAddress("Isam Hashmi", "***REMOVED***"));
         // mailMessage.To.Add(new MailboxAddress("Isam Hashmi", "***REMOVED***@txt.att.net" ));
 
@@ -117,7 +124,7 @@ class Program
             using (var smtpClient = new SmtpClient())
             {
                 smtpClient.Connect("smtp.gmail.com", 465, true);
-                smtpClient.Authenticate("***REMOVED***", "***REMOVED***");
+                smtpClient.Authenticate(outgoingMailBox.Email, outgoingMailBox.AccessKey);
                 smtpClient.Send(mailMessage);
                 smtpClient.Disconnect(true);
             }
