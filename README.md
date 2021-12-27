@@ -6,7 +6,7 @@ Part of the process was pulling up PickNPull's website EVERY DAY to find out if 
 
 Well, as all software engineers do, we write a quick and simple program `(translation: a few all nighters on weekends because we can't put the code down)` to just do it for us and then automate it to send out the email every morning at 8am so we can hit the junkyard after work.
 
-As a result, I was able to fix my AC, grab various parts for my car, help my brother convert his car from an *automatic* to a *manual*, fix my little-brother-in-law's car in a MYRAIAD of different ways...
+As a result, I was able to fix my AC, grab various parts for my car, help my brother convert his car from an *automatic* to a *manual*, fix my little-brother-in-law's car in a MYRIAD of different ways...
 
 At 1/10th the cost of actually buying the parts brand new. :)
 
