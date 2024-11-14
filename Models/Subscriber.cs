@@ -9,33 +9,32 @@ namespace Junkyard;
 [Serializable]
 public class Subscriber
 {
-    public string Name { get; set; }
-    public string Email { get; set; }
-    public static List<Subscriber> Deserialize(string json)
-    {
-        var options = new JsonSerializerOptions
-        {
-            AllowTrailingCommas = true,
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            PropertyNameCaseInsensitive = true,
-        };
+  public string Name { get; set; }
+  public string Email { get; set; }
 
-        return JsonSerializer.Deserialize<List<Subscriber>>(json, options);
-    }
-    public static async Task<List<Subscriber>> ReadSubscribers(string subscribersPath)
+  public static List<Subscriber> Deserialize(string json)
+  {
+    return JsonSerializer.Deserialize<List<Subscriber>>(json, Constants.SerializerOptions);
+  }
+
+  public static async Task<List<Subscriber>> ReadSubscribers(string subscribersPath)
+  {
+    if (!File.Exists(subscribersPath))
     {
-        try
-        {
-            using (StreamReader inputFile = new StreamReader(subscribersPath))
-            {
-                var subscribersJson = await inputFile.ReadToEndAsync();
-                return Subscriber.Deserialize(subscribersJson);
-            }
-        }
-        catch
-        {
-            Console.WriteLine("Subscribers file does not exist.");
-            return null;
-        }
+      Console.WriteLine($"{subscribersPath} does not exist. Creating it for you. Please fill it out.");
+      var created = File.Create(subscribersPath);
+      created.Close();
+      return [];
     }
+    try
+    {
+      using var inputFile = new StreamReader(subscribersPath);
+      var subscribersJson = await inputFile.ReadToEndAsync();
+      return Subscriber.Deserialize(subscribersJson);
+    }
+    catch
+    {
+      return null;
+    }
+  }
 }
